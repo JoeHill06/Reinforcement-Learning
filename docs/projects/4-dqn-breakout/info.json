@@ -1,0 +1,49 @@
+{
+    "id": "4-dqn-breakout",
+    "number": 4,
+    "title": "Dueling Double DQN — Atari Breakout",
+    "summary": "Dueling CNN + Double DQN + Prioritized Replay + 4-step returns → 27.9 avg over 50 games",
+    "description": "A Dueling Double DQN trained from raw Atari pixels with Prioritized Experience Replay and n-step returns. The shared CNN trunk maps a (4, 84, 84) stack of grayscale frames to a 3136-dimensional feature vector, which splits into a Value head (V(s)) and an Advantage head (A(s,a)). Combined as Q = V + (A − mean A), the architecture lets the network learn state value separately from action preferences — useful in Breakout where most frames have roughly equivalent actions. Double DQN decouples action selection (online net) from action evaluation (target net) to cut overestimation bias. A SumTree-backed PER buffer samples high-TD-error transitions more often, and 4-step returns propagate reward further back in time. Trained for 70,001 episodes on Apple MPS.",
+    "eval": {
+      "games": 50,
+      "epsilon": 0.05,
+      "average": 27.9,
+      "best": 80,
+      "worst": 11,
+      "std_dev": 12.1
+    },
+    "demo": {
+      "type": "video",
+      "video_path": "projects/4-dqn-breakout/demo.mp4",
+      "caption": "Evaluation game (ε=0.05). Autoplays muted, loops."
+    },
+    "notes": {
+      "markdown_path": "projects/4-dqn-breakout/notes.md"
+    },
+    "learning_method": {
+      "title": "The update rule",
+      "formula": "loss = mean( w_i · Huber( Q(s,a;θ),  r + γ⁴ · Q(s', argmax_a Q(s';θ); θ⁻) ) )",
+      "points": [
+        "Dueling heads: Q(s,a) = V(s) + (A(s,a) − mean_a A(s,a)). The Value head learns how good the state is; the Advantage head only needs to learn relative action preferences. In Breakout, where most actions are equivalent most of the time, this separation is a significant win.",
+        "Double DQN: the online network selects the next action (argmax), the frozen target network scores it. Decoupling selection from evaluation removes the systematic overestimation bias of vanilla DQN.",
+        "Prioritized Experience Replay: transitions are stored in a SumTree and sampled proportional to |TD error|^0.6. New transitions get max priority. Importance sampling weights (β: 0.4→1.0) correct the distributional bias this introduces.",
+        "4-step returns: G_t = r_t + γr_{t+1} + γ²r_{t+2} + γ³r_{t+3} is stored instead of single-step reward. Each stored transition carries four steps of real experience, propagating reward signal further back in time.",
+        "Target network θ⁻ is a frozen copy of θ, synced every 1000 steps. It provides stable bootstrap targets so the network isn't chasing a moving reference.",
+        "Huber loss weighted by IS weights — quadratic for small TD errors, linear for large ones. Gradient clipping at max norm 10 prevents any single bad batch from destabilising training.",
+        "Reward clipping to sign(r) ∈ {−1, 0, +1} normalises the scale across all Atari games and keeps TD errors bounded."
+      ]
+    },
+    "what_i_learned": [
+      "Dueling heads are a low-cost architectural win: the same CNN trunk, just split at the FC layer. In games where state value dominates action choice (most Breakout frames), the value head converges fast and the advantage head only has to handle the residual.",
+      "Double DQN is almost free to implement once you have a target network — it's just routing the argmax through the online net and the Q-evaluation through the target net. The overestimation fix it provides is real and measurable.",
+      "PER complicates the training loop significantly (SumTree, IS weights, priority updates after every batch) but the payoff is that the buffer stops wasting capacity on already-solved transitions and focuses on the hard ones.",
+      "N-step returns dramatically speed up credit assignment. With n=4 and frame-skip=4, a single stored transition represents 16 real environment frames of experience — the reward signal travels back much faster than 1-step TD.",
+      "Reward clipping is a hidden prerequisite for Huber loss to work as intended: if raw Atari scores (which vary wildly across games) are fed in uncapped, the 'small error' regime of Huber never applies and you're back to linear loss on everything."
+    ],
+    "things_to_try_next": [
+      "Noisy nets — replace ε-greedy with learned parameter noise injected into the FC layers, giving the network state-dependent exploration instead of random action flips.",
+      "Distributional RL (C51 or QR-DQN) — model the full return distribution rather than its expectation. Richer gradient signal and better handling of reward multimodality.",
+      "Longer GPU training — 70k episodes on Apple MPS is proof-of-concept scale. The tunnelling strategy (aiming the ball behind the bricks) needs roughly 10× more experience to reliably emerge.",
+      "Rainbow — combine all of the above (Dueling + Double + PER + n-step + Noisy + Distributional) into a single agent and see how close to human-level Breakout performance is achievable."
+    ]
+  }
